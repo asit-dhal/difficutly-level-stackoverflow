@@ -2,6 +2,7 @@
 Estimating Difficulty level of stackoverflow questions by text analysis
 The objective of this lab is to estimate the difficulty level of questions asked in Stackoverflow by using text analysis.
 
+## Steps
 ### Build the jar file
 ```shell
 C:\Users\Asit\workspace\Kom2Lab>ant build
@@ -41,6 +42,7 @@ Buildfile: C:\Users\Asit\workspace\Kom2Lab\build.xml
 ```
 
 ### Load stackoverflow dump to database
+XM Dump file source: [stackoverflow-archive][stackoverflow-archive]
 ```shell
 C:\Users\Asit\workspace\Kom2Lab> ant -Dusername=root -Dpassword=tintin -Ddb=kom -Dxmldump="posts.xml,users.xml" load
 ```
@@ -97,3 +99,9 @@ C:\Users\Asit\workspace\Kom2Lab>
 ant -Danalyze="data\20150210_092809_python.arff" analyze
 data\20150210_092809_python.arff - file generated in step 5
 ```
+
+### Report
+The report is uploaded [here][report]
+
+[stackoverflow-archive]: <https://archive.org/details/stackexchange>
+[report]: <https://github.com/asit-dhal/difficutly-level-stackoverflow/blob/master/Report.pdf>
