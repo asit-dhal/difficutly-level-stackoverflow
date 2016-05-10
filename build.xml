@@ -1,0 +1,205 @@
+<?xml version="1.0" encoding="ISO-8859-1"?>
+<project name="main" default="help">
+    
+    <!-- don't mess with these things -->
+	<property name="src-dir" value="src" />
+	<property name="class-dir" value="bin" />
+	<property name="lib-dir" value="lib" />
+	<property name="sql-dir" value="sql" />
+	<property name="config-dir" value="configs" />
+	<property name="create-sql" value="db.sql" />
+	<property name="post-sql" value="post_processings.sql" />
+	<property name="data-dir" value="data" />
+	<property name="xmldump" value="" />
+	
+	<property name="xmlformat" value="dump_config.xml" />
+	<property name="analyze" value="" />
+	
+	<!--  to be configured by user -->
+	<property name="records" value="1000" />
+	<property name="dburl" value="localhost"/>
+	<property name="username" value="root" />
+	<property name="password" value="tintin" />
+	<property name="db" value="bigkom" />
+	<property name="model" value="naivebayes" />
+	<!-- <property name="model-options" value="-C 1.0 -L 0.0010 -P 1.0E-12 -N 0 -V -1 -W 1" />  -->
+	<property name="model-options" value="-K " />  
+	<property name="weight" value="0.7" />
+	<property name="cost-matrix" value="[ 0.0 9.0; 30.0 0.0 ]"/>
+	<property name="filter-options" value="-L -C -T -I -tokenizer weka.core.tokenizers.AlphabeticTokenizer" />
+	<property name="folds" value="10" />
+	<property name="tags" value="python" />
+	<tstamp>
+		<format property="time.stamp" pattern="yyyyMMdd_HHmmss" />
+	</tstamp>
+
+
+	<macrodef name="quiet">
+		<element name="body" implicit="yes" />
+		<sequential>
+			<script language="javascript">
+				project.getBuildListeners().firstElement().setMessageOutputLevel(0);
+			</script>
+			<body />
+			<script language="javascript">
+				project.getBuildListeners().firstElement().setMessageOutputLevel(2);
+			</script>
+		</sequential>
+	</macrodef>
+
+	<path id="class-path">
+		<fileset dir="${lib-dir}">
+			<include name="*.jar" />
+		</fileset>
+	</path>
+
+	<pathconvert property="manifest.classpath" pathsep=" ">
+		<path refid="class-path" />
+		<mapper>
+			<chainedmapper>
+				<flattenmapper />
+				<globmapper from="*.jar" to="${lib-dir}/*.jar" />
+			</chainedmapper>
+		</mapper>
+	</pathconvert>
+
+	<target name="help" description="Usages">
+		<echo>
+			-Dusername=db-username -Dpassword=db-password -Ddb=database-name task(s)
+			valid tasks --
+			build - to build jar file
+			-Dxmldump=test.xml load - to load test.xml(stackoverflow dump)
+			post - to do post processing(separating python questions, stripping html
+			tags from question text)
+			generate - to generate arff file
+		</echo>
+	</target>
+
+	<target name="clean" description="Delete all generated files">
+		<delete dir="${class-dir}" failonerror="false" />
+		<delete file="${ant.project.name}.jar" />
+	</target>
+
+	<target name="compile" description="Compiles the java files"
+		depends="clean">
+		<mkdir dir="${class-dir}" />
+		<javac srcdir="${src-dir}" destdir="${class-dir}" verbose="false"
+			debug="true" debuglevel="lines,vars,source" includeantruntime="false">
+			<classpath refid="class-path" />
+		</javac>
+	</target>
+
+	<target name="build" description="build JAR file" depends="compile">
+		<jar destfile="${ant.project.name}.jar" basedir="${class-dir}">
+			<manifest>
+				<attribute name="Main-Class" value="de/tu_darmstadt/kom/stackoverflow/Main" />
+				<attribute name="Class-Path" value="${manifest.classpath}" />
+			</manifest>
+		</jar>
+	</target>
+
+	<target name="setup"
+		description="create db setup command: -Dusername=db-username -Dpassword=db-password -Ddb=database-name setup">
+		<sql driver="org.gjt.mm.mysql.Driver" url="jdbc:mysql://${dburl}/kom?autoReconnect=true"
+			userid="${username}" password="${password}" print="yes" classpathref="class-path"
+			output="ant-sql.log" src="${sql-dir}/${create-sql}" delimiter="$$">
+			CREATE DATABASE IF NOT EXISTS ${db} $$
+			use ${db} $$
+		</sql>
+	</target>
+
+	<target name="load"
+		description="load stackoverflow xmldump command: -Dusername=db-username -Dpassword=db-password -Ddb=database-name load">
+		
+			<java jar="${ant.project.name}.jar" fork="true">
+				<arg value="-u" />
+				<arg value="${username}" />
+				<arg value="-d" />
+				<arg value="${db}" />
+				<arg value="--password" />
+				<arg value="${password}" />
+				<arg value="--url" />
+				<arg value="${dburl}" />
+				<arg value="-l" />
+				<arg value="${xmldump}" />
+			</java>
+		
+	</target>
+
+	<target name="post"
+		description="do post processing command: -Dusername=db-username -Dpassword=db-password -Ddb=database-name post">
+		<echo message="Doing Post processing..."></echo>
+		<sql driver="org.gjt.mm.mysql.Driver" url="jdbc:mysql://${dburl}/${db}?autoReconnect=true"
+			userid="root" password="tintin" print="yes" classpathref="class-path"
+			output="logs/ant-sql.log">
+			use ${db};
+			create index idx_posts_accepted_answer_id  using btree on posts(accepted_answer_id);
+			create index idx_posts_post_type_id  using hash on posts(post_type_id);
+			alter table users add primary key(user_id);
+			create index idx_reputation  using btree on users(reputation);
+			create index idx_up_votes  using btree on users(up_votes);
+			create index idx_down_votes  using btree on users(down_votes);
+			call create_tables_csv("${tags}");
+			call post_processing_csv("${tags}");
+		</sql>
+		<java jar="${ant.project.name}.jar" fork="true">
+			<arg value="-u" />
+			<arg value="${username}" />
+			<arg value="-d" />
+			<arg value="${db}" />
+			<arg value="--password" />
+			<arg value="${password}" />
+			<arg value="--url" />
+			<arg value="${dburl}" />	
+			<arg value="-p" />
+			<arg value="--tags" />
+			<arg value="${tags}" />
+		</java>
+
+	</target>
+
+	<target name="generate"
+		description="generate arff file command: -Dusername=db-username -Dpassword=db-password -Ddb=database-name -Drecords=500 generate">
+		<java jar="${ant.project.name}.jar" fork="true">
+			<arg value="-u" />
+			<arg value="${username}" />
+			<arg value="-d" />
+			<arg value="${db}" />
+			<arg value="--password" />
+			<arg value="${password}" />
+			<arg value="--url" />
+			<arg value="${dburl}" />
+			<arg value="--records" />
+			<arg value="${records}" />
+			<arg value="-g" />
+			<arg value="${data-dir}/${time.stamp}" />
+			<arg value="--tags" />
+			<arg value="${tags}" />
+		</java>
+		
+
+	</target>
+
+
+	<target name="analyze" description="Analyze">
+	    <java jar="${ant.project.name}.jar" fork="true">
+			<arg value="--analyze" />
+			<arg value="${analyze}" />
+			<arg value="--model" />
+			<arg value="${model}" />
+			<arg value="--model-options" />
+			<arg value="${model-options}" />
+			<arg value="--filter-options" />
+			<arg value="${filter-options}" />
+			<arg value="--cost-matrix" />
+			<arg value="${cost-matrix}" />
+			<arg value="--weight" />
+			<arg value="${weight}" />
+			<arg value="--folds" />
+			<arg value="${folds}" />
+		</java>
+		
+
+	</target>
+
+</project>
